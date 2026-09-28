@@ -1,0 +1,673 @@
+// OpenLab Cloud — PostgreSQL schema (Phase 2 target).
+// Conventions: UUID PKs, snake_case tables, created_at/updated_at/created_by,
+// soft delete via deleted_at where resources can be restored/audited.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────── Identity & access ─────────────
+
+model User {
+  id           String    @id @default(uuid()) @db.Uuid
+  email        String    @unique
+  name         String
+  passwordHash String    @map("password_hash") // Argon2id — never plaintext
+  status       UserStatus @default(ACTIVE)
+  lastLoginAt  DateTime? @map("last_login_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdBy    String?   @map("created_by") @db.Uuid
+  deletedAt    DateTime? @map("deleted_at")
+
+  sessions   Session[]
+  userRoles  UserRole[]
+  memberships ProjectMember[]
+  apiKeys    ApiKey[]
+  auditLogs  AuditLog[]
+  notifications Notification[]
+  ownedInstances Instance[] @relation("InstanceOwner")
+  teams       TeamMember[]
+
+  @@map("users")
+}
+
+enum UserStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+}
+
+model Session {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String   @map("user_id") @db.Uuid
+  sessionToken String   @unique @map("session_token") // stored hashed
+  expires      DateTime
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+model Role {
+  id             String   @id @default(uuid()) @db.Uuid
+  organizationId String?  @map("organization_id") @db.Uuid // null = built-in
+  name           String
+  description    String?
+  builtIn        Boolean  @default(false) @map("built_in")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+  createdBy      String?  @map("created_by") @db.Uuid
+
+  organization Organization?    @relation(fields: [organizationId], references: [id])
+  permissions  RolePermission[]
+  userRoles    UserRole[]
+
+  @@unique([organizationId, name])
+  @@map("roles")
+}
+
+model Permission {
+  id          String @id @default(uuid()) @db.Uuid
+  key         String @unique // e.g. "vm.create"
+  description String?
+  roles       RolePermission[]
+
+  @@map("permissions")
+}
+
+model RolePermission {
+  roleId       String     @map("role_id") @db.Uuid
+  permissionId String     @map("permission_id") @db.Uuid
+  role         Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission   Permission @relation(fields: [permissionId], references: [id], onDelete: Cascade)
+
+  @@id([roleId, permissionId])
+  @@map("role_permissions")
+}
+
+/// Role binding, optionally scoped to one project (null = organization-wide).
+model UserRole {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  roleId    String   @map("role_id") @db.Uuid
+  projectId String?  @map("project_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String?  @map("created_by") @db.Uuid
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, projectId])
+  @@map("user_roles")
+}
+
+model ApiKey {
+  id         String    @id @default(uuid()) @db.Uuid
+  userId     String    @map("user_id") @db.Uuid
+  name       String
+  prefix     String    @unique // shown to user, e.g. "olk_ab12"
+  secretHash String    @map("secret_hash") // SHA-256/Argon2 — never plaintext
+  scopes     String[]
+  expiresAt  DateTime? @map("expires_at")
+  lastUsedAt DateTime? @map("last_used_at")
+  revokedAt  DateTime? @map("revoked_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_keys")
+}
+
+// ───────────── Tenancy ─────────────
+
+model Organization {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String    @unique
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  projects  Project[]
+  roles     Role[]
+  teams     Team[]
+
+  @@map("organizations")
+}
+
+model Project {
+  id             String    @id @default(uuid()) @db.Uuid
+  organizationId String    @map("organization_id") @db.Uuid
+  name           String
+  description    String?
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  deletedAt      DateTime? @map("deleted_at")
+
+  organization    Organization     @relation(fields: [organizationId], references: [id])
+  members         ProjectMember[]
+  userRoles       UserRole[]
+  instances       Instance[]
+  networks        Network[]
+  volumes         Volume[]
+
+  @@unique([organizationId, name])
+  @@map("projects")
+}
+
+model Team {
+  id             String       @id @default(uuid()) @db.Uuid
+  organizationId String       @map("organization_id") @db.Uuid
+  name           String
+  createdAt      DateTime     @default(now()) @map("created_at")
+  updatedAt      DateTime     @updatedAt @map("updated_at")
+  createdBy      String?      @map("created_by") @db.Uuid
+  organization   Organization @relation(fields: [organizationId], references: [id])
+  members        TeamMember[]
+
+  @@unique([organizationId, name])
+  @@map("teams")
+}
+
+model TeamMember {
+  teamId String @map("team_id") @db.Uuid
+  userId String @map("user_id") @db.Uuid
+  team   Team   @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([teamId, userId])
+  @@map("team_members")
+}
+
+model ProjectMember {
+  projectId String   @map("project_id") @db.Uuid
+  userId    String   @map("user_id") @db.Uuid
+  createdAt DateTime @default(now()) @map("created_at")
+  createdBy String?  @map("created_by") @db.Uuid
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([projectId, userId])
+  @@map("project_members")
+}
+
+model ResourceQuota {
+  id           String     @id @default(uuid()) @db.Uuid
+  scope        QuotaScope
+  scopeId      String     @map("scope_id") @db.Uuid
+  maxInstances Int        @map("max_instances")
+  maxCpuCores  Int        @map("max_cpu_cores")
+  maxMemoryMb  Int        @map("max_memory_mb")
+  maxStorageGb Int        @map("max_storage_gb")
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+  createdBy    String?    @map("created_by") @db.Uuid
+
+  @@unique([scope, scopeId])
+  @@map("resource_quotas")
+}
+
+enum QuotaScope {
+  USER
+  TEAM
+  PROJECT
+}
+
+// ───────────── Compute ─────────────
+
+model Cluster {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by") @db.Uuid
+  nodes     Node[]
+
+  @@map("clusters")
+}
+
+model Node {
+  id                  String       @id @default(uuid()) @db.Uuid
+  clusterId           String       @map("cluster_id") @db.Uuid
+  name                String       @unique
+  address             String
+  provider            ProviderKind
+  status              NodeStatus   @default(OFFLINE)
+  cpuModel            String?      @map("cpu_model")
+  cpuCores            Int          @map("cpu_cores")
+  memoryMb            BigInt       @map("memory_mb")
+  /// AES-256-GCM encrypted provider credential (TLS client cert / API token). Key from KMS/env, never in DB.
+  credentialEncrypted Bytes?       @map("credential_encrypted")
+  credentialKeyId     String?      @map("credential_key_id")
+  lastSeenAt          DateTime?    @map("last_seen_at")
+  createdAt           DateTime     @default(now()) @map("created_at")
+  updatedAt           DateTime     @updatedAt @map("updated_at")
+  createdBy           String?      @map("created_by") @db.Uuid
+  deletedAt           DateTime?    @map("deleted_at")
+
+  cluster         Cluster          @relation(fields: [clusterId], references: [id])
+  instances       Instance[]
+  storagePools    StoragePool[]
+
+  @@index([clusterId, status])
+  @@map("nodes")
+}
+
+enum ProviderKind {
+  MOCK
+  INCUS
+  LXC
+  LIBVIRT
+  PROXMOX
+  DOCKER
+}
+
+enum NodeStatus {
+  ONLINE
+  OFFLINE
+  MAINTENANCE
+}
+
+enum InstanceStatus {
+  RUNNING
+  STOPPED
+  STARTING
+  STOPPING
+  ERROR
+}
+
+/// Unified compute resource: KVM virtual machine or system container.
+model Instance {
+  id            String         @id @default(uuid()) @db.Uuid
+  type          InstanceType
+  projectId     String         @map("project_id") @db.Uuid
+  nodeId        String         @map("node_id") @db.Uuid
+  ownerId       String         @map("owner_id") @db.Uuid
+  name          String
+  description   String?
+  providerRef   String?        @map("provider_ref") // id/name inside the hypervisor
+  status        InstanceStatus @default(STOPPED)
+  osFamily      String         @map("os_family")
+  osVersion     String         @map("os_version")
+  cpuCores      Int            @map("cpu_cores")
+  memoryMb      Int            @map("memory_mb")
+  diskGb        Int            @map("disk_gb")
+  networkId     String         @map("network_id") @db.Uuid
+  storagePoolId String         @map("storage_pool_id") @db.Uuid
+  ipv4          String?
+  macAddress    String         @map("mac_address")
+  cloudInit     String?        @map("cloud_init")
+  templateId    String?        @map("template_id") @db.Uuid
+  imageId       String?        @map("image_id") @db.Uuid
+  startedAt     DateTime?      @map("started_at")
+  createdAt     DateTime       @default(now()) @map("created_at")
+  updatedAt     DateTime       @updatedAt @map("updated_at")
+  createdBy     String?        @map("created_by") @db.Uuid
+  deletedAt     DateTime?      @map("deleted_at")
+
+  project     Project              @relation(fields: [projectId], references: [id])
+  node        Node                 @relation(fields: [nodeId], references: [id])
+  owner       User                 @relation("InstanceOwner", fields: [ownerId], references: [id])
+  network     Network              @relation(fields: [networkId], references: [id])
+  storagePool StoragePool          @relation(fields: [storagePoolId], references: [id])
+  template    Template?            @relation(fields: [templateId], references: [id])
+  image       Image?               @relation(fields: [imageId], references: [id])
+  disks       VmDisk[]
+  interfaces  VmNetworkInterface[]
+  snapshots   Snapshot[]
+  backups     Backup[]
+
+  @@index([projectId, deletedAt])
+  @@index([nodeId])
+  @@index([status])
+  @@map("instances")
+}
+
+enum InstanceType {
+  VM
+  CONTAINER
+}
+
+model VmDisk {
+  id       String  @id @default(uuid()) @db.Uuid
+  instanceId String @map("instance_id") @db.Uuid
+  volumeId String  @unique @map("volume_id") @db.Uuid
+  bus      String  @default("virtio-scsi")
+  bootIndex Int?   @map("boot_index")
+  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  volume   Volume         @relation(fields: [volumeId], references: [id])
+
+  @@map("vm_disks")
+}
+
+model VmNetworkInterface {
+  id          String  @id @default(uuid()) @db.Uuid
+  instanceId  String  @map("instance_id") @db.Uuid
+  networkId   String  @map("network_id") @db.Uuid
+  macAddress  String  @unique @map("mac_address")
+  model       String  @default("virtio")
+  vlanId      Int?    @map("vlan_id")
+  firewall    Boolean @default(true)
+  instance    Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  network     Network        @relation(fields: [networkId], references: [id])
+  ipAddresses IpAddress[]
+
+  @@map("vm_network_interfaces")
+}
+
+// ───────────── Networking ─────────────
+
+model Network {
+  id        String      @id @default(uuid()) @db.Uuid
+  projectId String?     @map("project_id") @db.Uuid // null = shared
+  name      String
+  type      NetworkType
+  bridge    String
+  vlanId    Int?        @map("vlan_id")
+  dns       String[]
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  createdBy String?     @map("created_by") @db.Uuid
+  deletedAt DateTime?   @map("deleted_at")
+
+  project    Project?             @relation(fields: [projectId], references: [id])
+  subnets    Subnet[]
+  interfaces VmNetworkInterface[]
+  instances  Instance[]
+
+  @@unique([projectId, name])
+  @@map("networks")
+}
+
+enum NetworkType {
+  BRIDGE
+  VLAN
+  NAT
+}
+
+model Subnet {
+  id        String      @id @default(uuid()) @db.Uuid
+  networkId String      @map("network_id") @db.Uuid
+  cidr      String      // stored as text; validated as inet/cidr in app layer
+  ipVersion Int         @map("ip_version")
+  gateway   String?
+  dhcpStart String?     @map("dhcp_start")
+  dhcpEnd   String?     @map("dhcp_end")
+  createdAt DateTime    @default(now()) @map("created_at")
+  updatedAt DateTime    @updatedAt @map("updated_at")
+  createdBy String?     @map("created_by") @db.Uuid
+  network   Network     @relation(fields: [networkId], references: [id], onDelete: Cascade)
+  addresses IpAddress[]
+
+  @@unique([networkId, cidr])
+  @@map("subnets")
+}
+
+model IpAddress {
+  id          String  @id @default(uuid()) @db.Uuid
+  subnetId    String  @map("subnet_id") @db.Uuid
+  address     String
+  interfaceId String? @map("interface_id") @db.Uuid
+  kind        String  @default("static") // static | dhcp | reserved
+  subnet      Subnet  @relation(fields: [subnetId], references: [id], onDelete: Cascade)
+  interface   VmNetworkInterface? @relation(fields: [interfaceId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+
+  @@unique([subnetId, address])
+  @@map("ip_addresses")
+}
+
+model FirewallRule {
+  id          String   @id @default(uuid()) @db.Uuid
+  scope       String   // global | node | vm | container
+  targetId    String?  @map("target_id") @db.Uuid
+  direction   String   // in | out
+  protocol    String   // tcp | udp | icmp | any
+  source      String
+  destination String
+  port        String?
+  action      String   // allow | drop | reject
+  priority    Int
+  enabled     Boolean  @default(true)
+  comment     String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  createdBy   String?  @map("created_by") @db.Uuid
+
+  @@index([scope, targetId, priority])
+  @@map("firewall_rules")
+}
+
+// ───────────── Storage & images ─────────────
+
+model StoragePool {
+  id         String    @id @default(uuid()) @db.Uuid
+  nodeId     String?   @map("node_id") @db.Uuid // null = shared (NFS/Ceph/S3)
+  name       String    @unique
+  driver     String    // local | zfs | nfs | ceph | s3
+  config     Json      // non-secret driver config
+  secretEncrypted Bytes? @map("secret_encrypted")
+  capacityGb BigInt    @map("capacity_gb")
+  content    String[]
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @updatedAt @map("updated_at")
+  createdBy  String?   @map("created_by") @db.Uuid
+  deletedAt  DateTime? @map("deleted_at")
+  node       Node?     @relation(fields: [nodeId], references: [id])
+  volumes    Volume[]
+  instances  Instance[]
+
+  @@map("storage_pools")
+}
+
+model Volume {
+  id        String    @id @default(uuid()) @db.Uuid
+  poolId    String    @map("pool_id") @db.Uuid
+  projectId String    @map("project_id") @db.Uuid
+  name      String
+  sizeGb    Int       @map("size_gb")
+  type      String    // ssd | hdd | nvme
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  pool      StoragePool @relation(fields: [poolId], references: [id])
+  project   Project     @relation(fields: [projectId], references: [id])
+  vmDisk    VmDisk?
+
+  @@unique([poolId, name])
+  @@map("volumes")
+}
+
+model Image {
+  id         String      @id @default(uuid()) @db.Uuid
+  name       String
+  osFamily   String      @map("os_family")
+  osVersion  String      @map("os_version")
+  format     String      // qcow2 | raw | squashfs
+  sha256     String
+  sizeBytes  BigInt      @map("size_bytes")
+  createdAt  DateTime    @default(now()) @map("created_at")
+  updatedAt  DateTime    @updatedAt @map("updated_at")
+  createdBy  String?     @map("created_by") @db.Uuid
+  instances  Instance[]
+  templates  Template[]
+
+  @@unique([name, osVersion])
+  @@map("images")
+}
+
+model IsoImage {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  poolId    String   @map("pool_id") @db.Uuid
+  sha256    String
+  sizeBytes BigInt   @map("size_bytes")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdBy String?  @map("created_by") @db.Uuid
+
+  @@map("iso_images")
+}
+
+model Template {
+  id        String           @id @default(uuid()) @db.Uuid
+  name      String           @unique
+  imageId   String           @map("image_id") @db.Uuid
+  cpuCores  Int              @map("cpu_cores")
+  memoryMb  Int              @map("memory_mb")
+  diskGb    Int              @map("disk_gb")
+  cloudInit String?          @map("cloud_init")
+  createdAt DateTime         @default(now()) @map("created_at")
+  updatedAt DateTime         @updatedAt @map("updated_at")
+  createdBy String?          @map("created_by") @db.Uuid
+  image     Image            @relation(fields: [imageId], references: [id])
+  instances Instance[]
+
+  @@map("templates")
+}
+
+model Snapshot {
+  id             String    @id @default(uuid()) @db.Uuid
+  instanceId     String    @map("instance_id") @db.Uuid
+  name           String
+  description    String?
+  includesMemory Boolean   @default(false) @map("includes_memory")
+  sizeGb         Float?    @map("size_gb")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  updatedAt      DateTime  @updatedAt @map("updated_at")
+  createdBy      String?   @map("created_by") @db.Uuid
+  deletedAt      DateTime? @map("deleted_at")
+  instance       Instance  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, deletedAt])
+  @@map("snapshots")
+}
+
+model Backup {
+  id        String    @id @default(uuid()) @db.Uuid
+  instanceId String   @map("instance_id") @db.Uuid
+  target    String    // local | nfs | s3
+  schedule  String?   // daily | weekly | monthly | cron
+  status    String
+  sizeBytes BigInt?   @map("size_bytes")
+  location  String?
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  createdBy String?   @map("created_by") @db.Uuid
+  deletedAt DateTime? @map("deleted_at")
+  instance  Instance  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@index([instanceId, createdAt])
+  @@map("backups")
+}
+
+// ───────────── Operations ─────────────
+
+model Job {
+  id           String    @id @default(uuid()) @db.Uuid
+  kind         String    // vm.create, vm.clone, backup.create, ...
+  status       JobStatus @default(QUEUED)
+  progress     Int       @default(0)
+  steps        Json
+  resourceType String?   @map("resource_type")
+  resourceId   String?   @map("resource_id") @db.Uuid
+  resourceName String    @map("resource_name")
+  projectId    String?   @map("project_id") @db.Uuid
+  payload      Json
+  error        String?
+  attempts     Int       @default(0)
+  startedAt    DateTime? @map("started_at")
+  finishedAt   DateTime? @map("finished_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+  createdBy    String?   @map("created_by") @db.Uuid
+
+  @@index([status, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("jobs")
+}
+
+enum JobStatus {
+  QUEUED
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+model Metric {
+  id           BigInt   @id @default(autoincrement())
+  resourceType String   @map("resource_type")
+  resourceId   String   @map("resource_id") @db.Uuid
+  name         String
+  value        Float
+  ts           DateTime
+
+  // Long-term metrics live in Prometheus; this table holds rollups only.
+  @@index([resourceType, resourceId, name, ts])
+  @@map("metrics")
+}
+
+model Alert {
+  id           String    @id @default(uuid()) @db.Uuid
+  severity     String    // warning | critical
+  kind         String    // high_cpu | high_memory | disk_full | node_offline | vm_down
+  message      String
+  resourceType String    @map("resource_type")
+  resourceId   String    @map("resource_id") @db.Uuid
+  resourceName String    @map("resource_name")
+  resolvedAt   DateTime? @map("resolved_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([resolvedAt, severity])
+  @@map("alerts")
+}
+
+/// Append-only. No updated_at / soft delete by design.
+model AuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  userId       String?  @map("user_id") @db.Uuid
+  action       String
+  resourceType String?  @map("resource_type")
+  resourceId   String?  @map("resource_id")
+  resourceName String?  @map("resource_name")
+  ipAddress    String   @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  result       String   // success | failure
+  metadata     Json?
+  createdAt    DateTime @default(now()) @map("created_at")
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([resourceType, resourceId])
+  @@map("audit_logs")
+}
+
+model Notification {
+  id        String    @id @default(uuid()) @db.Uuid
+  userId    String    @map("user_id") @db.Uuid
+  title     String
+  body      String?
+  readAt    DateTime? @map("read_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@map("notifications")
+}

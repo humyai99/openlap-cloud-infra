@@ -1,0 +1,51 @@
+# OpenLab Cloud — local / single-server deployment.
+#   Dev:   docker compose up -d db        (then `npm run dev`)
+#   Full:  docker compose --profile app up -d --build
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: openlab
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: openlab
+    ports:
+      - "127.0.0.1:5432:5432" # bind to localhost only
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openlab"]
+      interval: 5s
+      retries: 10
+
+  web:
+    profiles: ["app"]
+    build: .
+    command: ["npm", "run", "start"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://openlab:${POSTGRES_PASSWORD}@db:5432/openlab
+      OPENLAB_INPROCESS_WORKER: "false"
+    depends_on:
+      db: { condition: service_healthy }
+
+  worker:
+    profiles: ["app"]
+    build: .
+    command: ["npm", "run", "worker"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://openlab:${POSTGRES_PASSWORD}@db:5432/openlab
+    depends_on:
+      db: { condition: service_healthy }
+
+  proxy:
+    profiles: ["app"]
+    image: nginx:1.27-alpine
+    ports: ["80:80"]
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on: [web]
+
+volumes:
+  pgdata:
