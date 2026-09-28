@@ -42,3 +42,7 @@ next-env.d.ts
 
 # embedded dev database
 /.pgdata
+
+# TLS certificates (generated or provided per installation)
+/deploy/certs/*
+!/deploy/certs/.gitkeep

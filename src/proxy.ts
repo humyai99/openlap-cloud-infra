@@ -9,7 +9,7 @@ import { NextResponse, type NextRequest } from "next/server";
  *  - Security headers incl. CSP.
  */
 const SESSION_COOKIES = ["openlab_session", "__Host-openlab_session"];
-const PUBLIC_PATHS = ["/login", "/api/v1/auth/login"];
+const PUBLIC_PATHS = ["/login", "/api/v1/auth/login", "/api/v1/health"];
 const MUTATING = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const LIMITS = { login: { max: 10, windowMs: 60_000 }, api: { max: 300, windowMs: 60_000 } };

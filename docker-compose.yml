@@ -1,6 +1,19 @@
-# OpenLab Cloud — local / single-server deployment.
-#   Dev:   docker compose up -d db        (then `npm run dev`)
-#   Full:  docker compose --profile app up -d --build
+# OpenLab Cloud — single-server deployment.
+#
+#   Dev (DB only):  docker compose up -d db          then `npm run dev`
+#   Full stack:     docker compose --profile app up -d --build
+#                   → https://<server>   (self-signed cert unless you provide one in deploy/certs)
+#
+# Secrets come from .env (see .env.example). Nothing but Nginx is exposed publicly.
+name: openlab
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://openlab:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@db:5432/openlab
+  AUTH_SECRET: ${AUTH_SECRET:?set AUTH_SECRET in .env}
+  OPENLAB_ENCRYPTION_KEY: ${OPENLAB_ENCRYPTION_KEY:?set OPENLAB_ENCRYPTION_KEY in .env}
+  OPENLAB_PROVIDER: ${OPENLAB_PROVIDER:-mock}
+  OPENLAB_SECURE_COOKIES: ${OPENLAB_SECURE_COOKIES:-true}
+
 services:
   db:
     image: postgres:16-alpine
@@ -10,7 +23,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       POSTGRES_DB: openlab
     ports:
-      - "127.0.0.1:5432:5432" # bind to localhost only
+      - "127.0.0.1:5432:5432" # localhost only (for npm run dev / backups)
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -18,34 +31,67 @@ services:
       interval: 5s
       retries: 10
 
-  web:
+  migrate:
     profiles: ["app"]
-    build: .
-    command: ["npm", "run", "start"]
-    env_file: .env
+    build: { context: ., target: migrate }
     environment:
-      DATABASE_URL: postgresql://openlab:${POSTGRES_PASSWORD}@db:5432/openlab
-      OPENLAB_INPROCESS_WORKER: "false"
+      <<: *app-env
+      SEED_ADMIN_PASSWORD: ${SEED_ADMIN_PASSWORD:?set SEED_ADMIN_PASSWORD in .env}
     depends_on:
       db: { condition: service_healthy }
+    restart: "no"
+
+  web:
+    profiles: ["app"]
+    build: { context: ., target: web }
+    restart: unless-stopped
+    environment:
+      <<: *app-env
+      OPENLAB_INPROCESS_WORKER: "false"
+    expose: ["3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
 
   worker:
     profiles: ["app"]
-    build: .
-    command: ["npm", "run", "worker"]
-    env_file: .env
+    build: { context: ., target: worker }
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql://openlab:${POSTGRES_PASSWORD}@db:5432/openlab
+      <<: *app-env
+      OPENLAB_WORKER_CONCURRENCY: ${OPENLAB_WORKER_CONCURRENCY:-4}
     depends_on:
-      db: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+
+  # Creates a self-signed certificate on first start if deploy/certs is empty.
+  certs:
+    profiles: ["app"]
+    image: alpine/openssl:3.3.2
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        if [ -s /certs/tls.crt ] && [ -s /certs/tls.key ]; then echo "certificate present"; exit 0; fi
+        openssl req -x509 -newkey rsa:2048 -nodes -days 825 \
+          -keyout /certs/tls.key -out /certs/tls.crt \
+          -subj "/CN=${OPENLAB_HOSTNAME:-openlab.local}" \
+          -addext "subjectAltName=DNS:${OPENLAB_HOSTNAME:-openlab.local},DNS:localhost,IP:127.0.0.1"
+        chmod 600 /certs/tls.key && echo "self-signed certificate created"
+    volumes:
+      - ./deploy/certs:/certs
+    restart: "no"
 
   proxy:
     profiles: ["app"]
     image: nginx:1.27-alpine
-    ports: ["80:80"]
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on: [web]
+      - ./deploy/certs:/etc/nginx/certs:ro
+    depends_on:
+      certs: { condition: service_completed_successfully }
+      web: { condition: service_started }
 
 volumes:
   pgdata:

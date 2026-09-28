@@ -108,6 +108,49 @@ npm run worker
 
 ---
 
+## 5.1 ติดตั้งบน Server จริงด้วย Docker (Production)
+
+ใช้คำสั่งเดียว ระบบจะรันครบทุกส่วน ได้แก่ PostgreSQL, สร้างตาราง + seed, Web, Worker และ Nginx (HTTPS)
+
+**1. เตรียมเครื่อง** Linux ที่มี Docker + Docker Compose แล้ว clone repo และสร้าง `.env` ตามข้อ 3
+
+เพิ่มค่าต่อไปนี้ใน `.env` ด้วย
+
+| ตัวแปร | ความหมาย |
+|---|---|
+| `OPENLAB_HOSTNAME` | ชื่อเครื่องหรือโดเมน เช่น `lab.company.local` ใช้ออกใบรับรอง |
+| `OPENLAB_WORKER_CONCURRENCY` | จำนวนงานที่ worker ทำพร้อมกัน (ค่าเริ่มต้น 4) |
+
+**2. สั่งรัน**
+
+```bash
+docker compose --profile app up -d --build
+```
+
+ลำดับการทำงาน: `db` → `migrate` (สร้างตาราง + seed ครั้งแรก) → `web` + `worker` → `proxy`
+
+**3. เปิดใช้งาน** ที่ `https://<ชื่อเครื่อง>` (http จะถูก redirect ไป https อัตโนมัติ)
+
+**เรื่องใบรับรอง (HTTPS)**
+- ถ้าโฟลเดอร์ `deploy/certs` ว่าง ระบบจะสร้าง **self-signed certificate** ให้ ซึ่งเบราว์เซอร์จะเตือนว่าไม่ปลอดภัย กด "ดำเนินการต่อ" ได้ หรือนำไฟล์ `deploy/certs/tls.crt` ไปติดตั้งเป็น Trusted ในเครื่องผู้ใช้
+- ถ้ามีใบรับรองจริง (เช่นจาก CA ขององค์กร หรือ Let's Encrypt) ให้วางไฟล์ `tls.crt` และ `tls.key` ใน `deploy/certs` ก่อนรัน
+- **ทำไมต้อง HTTPS:** Cookie ของ session ถูกตั้งเป็น `Secure` จึงใช้ได้เฉพาะ HTTPS ถ้าเปิดผ่าน http ธรรมดาจะ Login ไม่ได้
+- ถ้าจำเป็นต้องใช้ http จริงๆ ในเครือข่าย Lab ที่ปิด ให้ตั้ง `OPENLAB_SECURE_COOKIES=false` (**ไม่แนะนำ** เพราะรหัสผ่านและ session จะวิ่งแบบไม่เข้ารหัส)
+
+**คำสั่งดูแลระบบ**
+
+| คำสั่ง | ทำอะไร |
+|---|---|
+| `docker compose --profile app ps` | ดูสถานะทุก container |
+| `docker compose --profile app logs -f web worker` | ดู log |
+| `git pull && docker compose --profile app up -d --build` | อัปเดตเวอร์ชัน (migration รันให้อัตโนมัติ) |
+| `docker compose exec db pg_dump -U openlab openlab > backup.sql` | สำรองฐานข้อมูล |
+| `curl -k https://localhost/api/v1/health` | เช็คว่าระบบและฐานข้อมูลทำงาน |
+
+> เปิดสู่ภายนอกแค่ port 80/443 ของ Nginx เท่านั้น ส่วน PostgreSQL ผูกกับ `127.0.0.1` และ Web อยู่ในเครือข่ายภายในของ Docker
+
+---
+
 ## 6. จัดการผู้ใช้ สิทธิ์ และโควตา
 
 **เพิ่มผู้ใช้** เมนู Management → Users → Invite User
@@ -189,6 +232,9 @@ git pull
 
 | อาการ | สาเหตุ / วิธีแก้ |
 |---|---|
+| เบราว์เซอร์เตือน "Your connection is not private" | เป็นใบรับรอง self-signed ดูหัวข้อ 5.1 เรื่องใบรับรอง |
+| Login แล้วเด้งกลับหน้า Login | เปิดผ่าน http แทน https ให้เข้าผ่าน `https://` |
+| container `migrate` ไม่ผ่าน | ดูสาเหตุด้วย `docker compose logs migrate` ส่วนใหญ่เป็นเพราะค่าใน `.env` ขาด |
 | `failed to connect to the docker API` | Docker Desktop ยังไม่เปิด หรือยังไม่ได้ติดตั้ง WSL (ดูข้อ 1) |
 | `DB_UNAVAILABLE` / `Can't reach database server` | PostgreSQL ยังไม่รัน → `npm run db:up` และเช็ค `DATABASE_URL` |
 | `OPENLAB_ENCRYPTION_KEY must be 32 bytes` | สร้างค่าใหม่ด้วยคำสั่งในข้อ 3 |

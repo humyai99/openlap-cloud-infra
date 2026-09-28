@@ -16,6 +16,16 @@ npm run db:deploy && npm run db:seed
 npm run dev                   # http://localhost:3000 — admin@openlab.local / $SEED_ADMIN_PASSWORD
 ```
 
+## Deploy (single server)
+
+```bash
+cp .env.example .env                        # fill in secrets
+docker compose --profile app up -d --build  # db → migrate → web + worker → nginx (TLS)
+```
+
+Open `https://<host>`. A self-signed certificate is generated unless you put `tls.crt` / `tls.key` in `deploy/certs`.
+Session cookies are `Secure`, so the console must be served over HTTPS. Health check: `GET /api/v1/health`.
+
 ## Architecture
 
 ```

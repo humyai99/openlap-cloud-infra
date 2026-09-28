@@ -10,7 +10,13 @@ import { db } from "./db";
  * The cookie holds a random token; the DB stores only SHA-256(token), so a DB leak
  * cannot be replayed and sessions can be revoked instantly.
  */
-export const SESSION_COOKIE = process.env.NODE_ENV === "production" ? "__Host-openlab_session" : "openlab_session";
+/**
+ * Secure cookies are on in production. They require HTTPS — the bundled Nginx terminates TLS.
+ * OPENLAB_SECURE_COOKIES=false exists only for trusted lab networks without TLS.
+ */
+const SECURE_COOKIES = process.env.OPENLAB_SECURE_COOKIES ? process.env.OPENLAB_SECURE_COOKIES !== "false" : process.env.NODE_ENV === "production";
+// The __Host- prefix makes browsers enforce Secure + Path=/ + no Domain, but only works with Secure.
+export const SESSION_COOKIE = SECURE_COOKIES ? "__Host-openlab_session" : "openlab_session";
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
 
 export interface Principal {
@@ -40,7 +46,7 @@ export async function createSession(userId: string, ip: string, userAgent: strin
   await db.session.create({ data: { userId, sessionToken: sha256(token), expires, ipAddress: ip, userAgent } });
   (await cookies()).set(SESSION_COOKIE, token, {
     httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
+    secure: SECURE_COOKIES,
     sameSite: "lax",
     path: "/",
     expires,
