@@ -1,5 +1,7 @@
 # OpenLab Cloud
 
+📖 **คู่มือภาษาไทย:** [docs/SETUP.th.md](docs/SETUP.th.md)
+
 **Build. Run. Experiment.** An open source private cloud and virtual lab console for VMs, Linux containers and virtual networks.
 
 > ⚠️ **Phase 1: Mock Provider.** No hypervisor is connected. Every VM and container operation is simulated in memory and resets when the server restarts. The UI shows this clearly with a "Mock Provider" badge.
