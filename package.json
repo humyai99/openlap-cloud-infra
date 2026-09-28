@@ -15,7 +15,10 @@
     "db:reset": "prisma migrate reset --force",
     "typecheck": "tsc --noEmit",
     "postinstall": "prisma generate",
-    "db:local": "tsx --env-file=.env scripts/local-db.ts"
+    "db:local": "tsx --env-file=.env scripts/local-db.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit"
   },
   "dependencies": {
     "@node-rs/argon2": "^2.2.1",
@@ -39,7 +42,6 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@embedded-postgres/windows-x64": "^18.4.0-beta.17",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
@@ -50,9 +52,13 @@
     "prisma": "^6.19.3",
     "tailwindcss": "^4",
     "tsx": "^4.23.15",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^3.2.7"
   },
   "prisma": {
     "seed": "tsx --env-file=.env prisma/seed.ts"
+  },
+  "optionalDependencies": {
+    "@embedded-postgres/windows-x64": "^18.4.0-beta.17"
   }
 }

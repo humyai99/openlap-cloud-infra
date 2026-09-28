@@ -54,7 +54,7 @@ export async function destroySession() {
   jar.delete(SESSION_COOKIE);
 }
 
-async function loadPrincipal(userId: string, via: Principal["via"], scopes: string[] | null): Promise<Principal | null> {
+export async function loadPrincipal(userId: string, via: Principal["via"], scopes: string[] | null): Promise<Principal | null> {
   const user = await db.user.findFirst({
     where: { id: userId, deletedAt: null, status: "ACTIVE" },
     include: { userRoles: { include: { role: { include: { permissions: { include: { permission: true } } } } } } },

@@ -150,8 +150,19 @@ npm run worker
 | `npm run build` | build production |
 | `npm run typecheck` | ตรวจ TypeScript |
 | `npm run lint` | ตรวจโค้ด |
+| `npm test` | รัน test ทั้งหมด 73 ข้อ (ต้องเปิดฐานข้อมูลก่อน) |
+| `npm run test:unit` | รันเฉพาะ unit test (ไม่ต้องใช้ฐานข้อมูล) |
 | `npm run db:reset` | ล้างฐานข้อมูลแล้วสร้างใหม่ (ข้อมูลหายหมด) |
 | `npx prisma studio` | เปิดหน้าเว็บดูข้อมูลในฐานข้อมูล |
+
+---
+
+### เกี่ยวกับ Test
+
+- **Unit** (`tests/unit`) ทดสอบ RBAC, การเข้ารหัส, validation, CSRF, rate limit
+- **Integration** (`tests/integration`) ทดสอบกับฐานข้อมูลจริง ได้แก่ quota (รวมกรณียิงพร้อมกันหลาย request), การกันยกระดับสิทธิ์, การแยก Project และ Job queue ที่มีหลาย worker
+- ทุกครั้งที่รัน ระบบสร้างฐานข้อมูลใหม่ชื่อ `openlab_test_<เวลา>` แล้วลบทิ้งเมื่อจบ **ข้อมูลใน `openlab` ไม่ถูกแตะ**
+- ทุกครั้งที่ push ขึ้น GitHub ระบบ CI (GitHub Actions) รัน typecheck, lint, test และ build ให้อัตโนมัติ ดูผลได้ที่แท็บ **Actions** ของ repo
 
 ---
 
