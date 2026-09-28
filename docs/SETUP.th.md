@@ -1,7 +1,7 @@
 # คู่มือติดตั้งและใช้งาน OpenLab Cloud (ภาษาไทย)
 
-> สถานะ: **Phase 1 เสร็จ** (UI + Mock Provider) · **Phase 2 กำลังพัฒนา** (PostgreSQL, Login, RBAC, Job Queue)
-> โค้ด Phase 2 เขียนเสร็จแล้ว แต่ยังไม่ได้ทดสอบกับฐานข้อมูลจริง อาจเจอ error ตอน build
+> สถานะ: **Phase 1 เสร็จ** (UI + Mock Provider) · **Phase 2 ใช้งานได้** (PostgreSQL, Login, RBAC, Job Queue, API Key) ทดสอบครบแล้ว
+> ยังไม่ได้เชื่อม Hypervisor จริง: VM/Container ทั้งหมดเป็นการจำลองผ่าน Mock Provider
 
 ---
 
@@ -11,7 +11,7 @@
 |---|---|---|
 | Node.js | 20 ขึ้นไป (แนะนำ 24) | รันเว็บ |
 | Git | ล่าสุด | ดึง/ส่งโค้ด |
-| Docker Desktop | ล่าสุด | รัน PostgreSQL |
+| Docker Desktop | ล่าสุด | รัน PostgreSQL (ไม่บังคับ ดูทางเลือก B ในข้อ 4) |
 
 **Windows:** Docker Desktop ต้องมี WSL ก่อน เปิด PowerShell แบบ Administrator แล้วรัน
 
@@ -61,11 +61,29 @@ cp .env.example .env
 
 ## 4. เปิดฐานข้อมูลและสร้างตาราง
 
+เลือกวิธีเปิด PostgreSQL **อย่างใดอย่างหนึ่ง**
+
+**A. ใช้ Docker** (แนะนำสำหรับ server จริง)
+
 ```bash
-npm run db:up        # เปิด PostgreSQL ใน Docker
-npm run db:migrate   # สร้างตารางตาม prisma/schema.prisma (ครั้งแรกจะถามชื่อ migration ให้ตั้งเช่น init)
+npm run db:up
+```
+
+**B. ไม่มี Docker** (สำหรับเครื่องพัฒนา) ใช้ PostgreSQL ที่ติดตั้งมากับ npm แล้ว เก็บข้อมูลไว้ในโฟลเดอร์ `.pgdata`
+ต้องเปิดหน้าต่าง Terminal นี้ค้างไว้ตลอดที่ใช้งาน กด Ctrl+C เพื่อปิด
+
+```bash
+npm run db:local
+```
+
+จากนั้นเปิด Terminal อีกหน้าต่าง แล้วสร้างตารางและใส่ข้อมูลตัวอย่าง
+
+```bash
+npm run db:deploy    # สร้างตารางจาก prisma/migrations
 npm run db:seed      # ใส่ข้อมูลตัวอย่าง: node, VM, network, user, role
 ```
+
+> ถ้าแก้ `prisma/schema.prisma` ให้ใช้ `npm run db:migrate` เพื่อสร้าง migration ใหม่
 
 ---
 
@@ -130,6 +148,8 @@ git pull
 | `DB_UNAVAILABLE` / `Can't reach database server` | PostgreSQL ยังไม่รัน → `npm run db:up` และเช็ค `DATABASE_URL` |
 | `OPENLAB_ENCRYPTION_KEY must be 32 bytes` | สร้างค่าใหม่ด้วยคำสั่งในข้อ 3 |
 | Login ไม่ได้ | ยังไม่ได้ `npm run db:seed` หรือรหัสไม่ตรง `SEED_ADMIN_PASSWORD` |
+| `has no equivalent in encoding "WIN874"` | ฐานข้อมูลสร้างด้วย encoding ของ Windows ให้ปิด `db:local` ลบโฟลเดอร์ `.pgdata` แล้วเปิดใหม่ (สคริปต์ปัจจุบันบังคับ UTF-8 แล้ว) |
+| หน้าเว็บ/API ขึ้น 404 ทั้งที่มีไฟล์ | cache ของ dev เสีย ให้ปิด `npm run dev` ลบโฟลเดอร์ `.next` แล้วเปิดใหม่ |
 | `Too many requests` | ระบบกัน brute force: login ผิดเกิน 10 ครั้ง/นาที ให้รอ 1 นาที |
 | `not a valid Win32 application` (swc) | ไฟล์ติดตั้งเสีย → ลบ `node_modules` แล้ว `npm install` ใหม่ |
 
@@ -146,5 +166,5 @@ Browser → Next.js (หน้าเว็บ + REST API /api/v1)
 ```
 
 - **Phase 1** ✅ UI, Mock Data
-- **Phase 2** 🚧 PostgreSQL, Login, RBAC, Job Queue, API Key
+- **Phase 2** ✅ PostgreSQL, Login (Argon2 + session), RBAC แยกตาม Project, Quota, Job Queue + Worker, API Key, Audit Log, CSRF/Rate limit
 - **Phase 3** ⏳ เชื่อม Incus จริง แล้วตามด้วย libvirt/KVM, noVNC Console, Prometheus

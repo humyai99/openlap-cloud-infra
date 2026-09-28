@@ -1,5 +1,5 @@
 // Shared by API routes and the standalone worker (no "server-only").
-import type { Prisma } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 import type { JobStep, PowerAction } from "@/lib/types";
 import { db } from "./db";
 
@@ -27,9 +27,10 @@ export interface JobMeta {
   steps: string[];
 }
 
-export async function enqueueJob(payload: JobPayload, meta: JobMeta) {
+/** Pass `client` (a transaction) to enqueue atomically with the state change that needs it. */
+export async function enqueueJob(payload: JobPayload, meta: JobMeta, client: Prisma.TransactionClient | PrismaClient = db) {
   const steps: JobStep[] = meta.steps.map((label) => ({ label, status: "queued" }));
-  return db.job.create({
+  return client.job.create({
     data: {
       kind: payload.kind,
       status: "QUEUED",

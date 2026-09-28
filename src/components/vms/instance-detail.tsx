@@ -3,7 +3,6 @@ import { Camera, ChevronDown, ChevronLeft, Loader2, Play, RotateCcw, RotateCw, S
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { toast } from "sonner";
 import { ConfirmDialog, EmptyState, ErrorState } from "@/components/common";
 import { MetricChart, RangePicker } from "@/components/dashboard/metric-chart";
 import { StatusBadge } from "@/components/ui/badge";

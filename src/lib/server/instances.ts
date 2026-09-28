@@ -120,12 +120,12 @@ export async function createInstance(ctx: Ctx, input: CreateInstanceInput) {
     cloudInit: input.cloudInit,
   };
 
-  const inst = await db.$transaction(async (tx) => {
+  const job = await db.$transaction(async (tx) => {
     if (await tx.instance.findFirst({ where: { projectId: input.projectId, name: input.name, deletedAt: null } })) {
       throw new ServiceError("NAME_TAKEN", `An instance named "${input.name}" already exists in this project`, 409);
     }
     await assertQuota(tx, input.projectId, ctx.principal.userId, input);
-    return tx.instance.create({
+    const inst = await tx.instance.create({
       data: {
         type,
         name: input.name,
@@ -146,16 +146,16 @@ export async function createInstance(ctx: Ctx, input: CreateInstanceInput) {
         createdBy: ctx.principal.userId,
       },
     });
+    const label = input.type === "vm" ? "VM" : "container";
+    return enqueueJob(
+      { kind: "vm.create", instanceId: inst.id, spec: spec as unknown as Prisma.JsonObject },
+      {
+        actorId: ctx.principal.userId, ip: ctx.ip, resourceName: inst.name, resourceId: inst.id, projectId: inst.projectId,
+        steps: [`Creating ${label}...`, "Allocating storage...", "Configuring network...", "Installing OS...", `Starting ${label}...`],
+      },
+      tx,
+    );
   });
-
-  const label = input.type === "vm" ? "VM" : "container";
-  const job = await enqueueJob(
-    { kind: "vm.create", instanceId: inst.id, spec: spec as unknown as Prisma.JsonObject },
-    {
-      actorId: ctx.principal.userId, ip: ctx.ip, resourceName: inst.name, resourceId: inst.id, projectId: inst.projectId,
-      steps: [`Creating ${label}...`, "Allocating storage...", "Configuring network...", "Installing OS...", `Starting ${label}...`],
-    },
-  );
   return toJob(job);
 }
 
@@ -168,34 +168,45 @@ export async function powerAction(ctx: Ctx, id: string, action: PowerAction) {
   if (wantsRunning && inst.status === "RUNNING") throw new ServiceError("INVALID_STATE", `${inst.name} is already running`, 409);
   if (!wantsRunning && inst.status === "STOPPED") throw new ServiceError("INVALID_STATE", `${inst.name} is already stopped`, 409);
 
-  await db.instance.update({ where: { id }, data: { status: wantsRunning ? "STARTING" : "STOPPING" } });
   const verb = { start: "Starting", stop: "Stopping", restart: "Restarting", shutdown: "Shutting down" }[action];
-  return toJob(
-    await enqueueJob({ kind: "vm.power", instanceId: id, action }, { actorId: ctx.principal.userId, ip: ctx.ip, resourceName: inst.name, resourceId: id, projectId: inst.projectId, steps: [`${verb} ${inst.name}...`] }),
-  );
+  const job = await db.$transaction(async (tx) => {
+    await tx.instance.update({ where: { id }, data: { status: wantsRunning ? "STARTING" : "STOPPING" } });
+    return enqueueJob({ kind: "vm.power", instanceId: id, action }, { actorId: ctx.principal.userId, ip: ctx.ip, resourceName: inst.name, resourceId: id, projectId: inst.projectId, steps: [`${verb} ${inst.name}...`] }, tx);
+  });
+  return toJob(job);
 }
 
 export async function deleteInstance(ctx: Ctx, id: string) {
   const inst = await findVisible(ctx, id);
   assertPermission(ctx.principal, managePerm(inst.type, "vm.delete"), inst.projectId);
-  await db.instance.update({ where: { id }, data: { status: "STOPPING" } });
-  return toJob(
-    await enqueueJob({ kind: "vm.delete", instanceId: id }, { actorId: ctx.principal.userId, ip: ctx.ip, resourceName: inst.name, resourceId: id, projectId: inst.projectId, steps: [`Deleting ${inst.name}...`] }),
-  );
+  const job = await db.$transaction(async (tx) => {
+    await tx.instance.update({ where: { id }, data: { status: "STOPPING" } });
+    return enqueueJob({ kind: "vm.delete", instanceId: id }, { actorId: ctx.principal.userId, ip: ctx.ip, resourceName: inst.name, resourceId: id, projectId: inst.projectId, steps: [`Deleting ${inst.name}...`] }, tx);
+  });
+  return toJob(job);
 }
 
 export async function cloneInstance(ctx: Ctx, id: string, name: string) {
   const src = await findVisible(ctx, id);
   assertPermission(ctx.principal, managePerm(src.type, "vm.create"), src.projectId);
-  const clone = await db.$transaction(async (tx) => {
+  const job = await db.$transaction(async (tx) => {
     if (await tx.instance.findFirst({ where: { projectId: src.projectId, name, deletedAt: null } })) throw new ServiceError("NAME_TAKEN", `"${name}" already exists in this project`, 409);
     await assertQuota(tx, src.projectId, ctx.principal.userId, src);
-    const { id: _id, createdAt: _c, updatedAt: _u, providerRef: _r, startedAt: _s, ipv4: _ip, node: _n, ...rest } = src;
-    return tx.instance.create({ data: { ...rest, name, status: "STARTING", ownerId: ctx.principal.userId, createdBy: ctx.principal.userId, macAddress: "pending" } });
+    const clone = await tx.instance.create({
+      data: {
+        type: src.type, projectId: src.projectId, nodeId: src.nodeId, networkId: src.networkId, storagePoolId: src.storagePoolId,
+        osFamily: src.osFamily, osVersion: src.osVersion, cpuCores: src.cpuCores, memoryMb: src.memoryMb, diskGb: src.diskGb,
+        description: src.description, cloudInit: src.cloudInit, templateId: src.templateId, imageId: src.imageId,
+        name, status: "STARTING", ownerId: ctx.principal.userId, createdBy: ctx.principal.userId, macAddress: "pending",
+      },
+    });
+    return enqueueJob(
+      { kind: "vm.clone", sourceId: src.id, instanceId: clone.id },
+      { actorId: ctx.principal.userId, ip: ctx.ip, resourceName: name, resourceId: clone.id, projectId: src.projectId, steps: [`Cloning ${src.name} → ${name}...`] },
+      tx,
+    );
   });
-  return toJob(
-    await enqueueJob({ kind: "vm.clone", sourceId: src.id, instanceId: clone.id }, { actorId: ctx.principal.userId, ip: ctx.ip, resourceName: name, resourceId: clone.id, projectId: src.projectId, steps: [`Cloning ${src.name} → ${name}...`] }),
-  );
+  return toJob(job);
 }
 
 export async function resizeInstance(ctx: Ctx, id: string, res: { cpuCores: number; memoryMb: number }) {

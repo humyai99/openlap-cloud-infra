@@ -4,13 +4,16 @@
 
 **Build. Run. Experiment.** An open source private cloud and virtual lab console for VMs, Linux containers and virtual networks.
 
-> ⚠️ **Phase 1: Mock Provider.** No hypervisor is connected. Every VM and container operation is simulated in memory and resets when the server restarts. The UI shows this clearly with a "Mock Provider" badge.
+> ⚠️ **Mock Provider.** No hypervisor is connected yet. VM and container operations are simulated by the mock adapter; everything else (auth, RBAC, quotas, jobs, audit) is real and persisted in PostgreSQL. The UI shows a "Mock Provider" badge.
 
 ## Run
 
 ```bash
 npm install
-npm run dev   # http://localhost:3000
+cp .env.example .env          # then fill in secrets (see docs/SETUP.th.md)
+npm run db:up                 # PostgreSQL in Docker, or: npm run db:local (no Docker, keep it running)
+npm run db:deploy && npm run db:seed
+npm run dev                   # http://localhost:3000 — admin@openlab.local / $SEED_ADMIN_PASSWORD
 ```
 
 ## Architecture
@@ -48,5 +51,5 @@ Rules the code follows:
 ## Roadmap
 
 - **Phase 1 (this):** UI/UX, mock API with production-shaped contracts.
-- **Phase 2:** PostgreSQL + Prisma, Auth.js (Argon2, secure cookies, CSRF), RBAC enforcement, durable job queue (pg-boss/BullMQ) + worker, SSE job progress, rate limiting, encrypted node credentials, Docker Compose.
+- **Phase 2 (done):** PostgreSQL + Prisma, Auth.js (Argon2, secure cookies, CSRF), RBAC enforcement, durable job queue (pg-boss/BullMQ) + worker, SSE job progress, rate limiting, encrypted node credentials, Docker Compose.
 - **Phase 3:** Incus provider, then libvirt/KVM, noVNC and xterm.js consoles, Prometheus/Grafana. Proxmox and Docker adapters later.
