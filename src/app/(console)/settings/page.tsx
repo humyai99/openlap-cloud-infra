@@ -3,8 +3,10 @@ import { MockNotice, PageHeader } from "@/components/common";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, Input, Select } from "@/components/ui/input";
 import { Progress } from "@/components/ui/misc";
+import { QuotasEditor } from "@/components/admin/quotas-editor";
+import { listQuotas } from "@/lib/server/admin";
 import { quotaUsage } from "@/lib/server/instances";
-import { requireUser } from "@/lib/server/auth";
+import { hasPermission, requireUser } from "@/lib/server/auth";
 import { queries } from "@/lib/server/queries";
 
 export const metadata: Metadata = { title: "Settings" };
@@ -19,8 +21,11 @@ const PROVIDERS = [
 ];
 
 export default async function SettingsPage() {
-  const projects = await queries.projects(await requireUser());
+  const me = await requireUser();
+  const projects = await queries.projects(me);
   const quotas = await Promise.all(projects.map((p) => quotaUsage(p.id)));
+  const canManage = hasPermission(me, "user.manage");
+  const rules = canManage ? await listQuotas() : null;
   return (
     <>
       <PageHeader title="Settings" description="Platform configuration, providers and quotas." />
@@ -49,7 +54,7 @@ export default async function SettingsPage() {
         </Card>
 
         <Card className="lg:col-span-2">
-          <CardHeader><div><CardTitle>Resource Quotas</CardTitle><CardDescription>Checked by the API before any resource is provisioned</CardDescription></div></CardHeader>
+          <CardHeader><div><CardTitle>Project Usage</CardTitle><CardDescription>Current usage against each project&apos;s quota</CardDescription></div></CardHeader>
           <CardContent className="grid gap-4 md:grid-cols-3">
             {projects.map((p, idx) => {
               const { quota, used } = quotas[idx];
@@ -75,6 +80,8 @@ export default async function SettingsPage() {
             })}
           </CardContent>
         </Card>
+
+        {rules && <QuotasEditor initial={rules.quotas} targets={rules.targets} />}
       </div>
     </>
   );

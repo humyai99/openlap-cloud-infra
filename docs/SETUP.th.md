@@ -108,7 +108,41 @@ npm run worker
 
 ---
 
-## 6. คำสั่งที่ใช้บ่อย
+## 6. จัดการผู้ใช้ สิทธิ์ และโควตา
+
+**เพิ่มผู้ใช้** เมนู Management → Users → Invite User
+1. ใส่ชื่อ อีเมล แล้วเลือก Role
+   - ขอบเขต *All projects* = ใช้ได้ทุก Project
+   - ขอบเขต *Project: xxx* = ใช้ได้เฉพาะ Project นั้น
+2. ระบบแสดง **รหัสผ่านชั่วคราวครั้งเดียว** ให้คัดลอกส่งให้ผู้ใช้ทางช่องทางที่ปลอดภัย
+3. ผู้ใช้ Login ครั้งแรก ต้องตั้งรหัสผ่านใหม่ก่อน (อย่างน้อย 12 ตัว มีทั้งตัวอักษรและตัวเลข) จึงจะใช้งานได้
+
+**เมนูของแต่ละผู้ใช้** (ปุ่ม ⋯)
+
+| เมนู | ผลลัพธ์ |
+|---|---|
+| Edit roles | ผู้ใช้ถูก Logout ทันที เพื่อให้สิทธิ์ใหม่มีผล |
+| Reset password | ได้รหัสชั่วคราวใหม่ ทุก session ของผู้ใช้ถูก Logout |
+| Disable | Login ไม่ได้ และ API Key ของผู้ใช้หยุดทำงานทันที |
+
+**Role แบบกำหนดเอง** เมนู Management → Roles → Create Role แล้วติ๊กเลือก Permission
+- Role ในตัว (Built-in) แก้ไขไม่ได้
+- ลบ Role ที่ยังมีคนใช้อยู่ไม่ได้
+
+**กฎความปลอดภัย** ป้องกันการยกระดับสิทธิ์
+- ให้สิทธิ์ที่ตัวเองไม่มีไม่ได้ เช่น Helpdesk ที่มีแค่ `user.manage` สร้าง Super Admin ไม่ได้
+- จัดการบัญชีคนที่มีสิทธิ์มากกว่าตัวเองไม่ได้ (Reset password / Disable / เปลี่ยน Role)
+- ปิดบัญชีตัวเอง หรือเปลี่ยน Role ตัวเองไม่ได้
+- ระบบต้องเหลือ Super Admin อย่างน้อย 1 คนเสมอ
+
+**โควตา** เมนู System → Settings → Quota Rules → Add quota
+- กำหนดได้ 3 ระดับ: Project / User / Team
+- ตอนสร้าง VM ต้องผ่าน**ทุกกฎ**ที่เกี่ยวข้อง คือ Project ที่สร้าง, เจ้าของ และทีมของเจ้าของ (Team = รวมการใช้ของสมาชิกทุกคน)
+- Project ที่ไม่มีกฎจะใช้ค่า default: 60 เครื่อง / 256 cores / 512 GB RAM / 8 TB
+
+---
+
+## 7. คำสั่งที่ใช้บ่อย
 
 | คำสั่ง | ทำอะไร |
 |---|---|
@@ -121,7 +155,7 @@ npm run worker
 
 ---
 
-## 7. ส่งโค้ดขึ้น GitHub หลังแก้ไข
+## 8. ส่งโค้ดขึ้น GitHub หลังแก้ไข
 
 ```bash
 git status                     # ดูว่าไฟล์ไหนเปลี่ยน
@@ -140,13 +174,15 @@ git pull
 
 ---
 
-## 8. แก้ปัญหาที่พบบ่อย
+## 9. แก้ปัญหาที่พบบ่อย
 
 | อาการ | สาเหตุ / วิธีแก้ |
 |---|---|
 | `failed to connect to the docker API` | Docker Desktop ยังไม่เปิด หรือยังไม่ได้ติดตั้ง WSL (ดูข้อ 1) |
 | `DB_UNAVAILABLE` / `Can't reach database server` | PostgreSQL ยังไม่รัน → `npm run db:up` และเช็ค `DATABASE_URL` |
 | `OPENLAB_ENCRYPTION_KEY must be 32 bytes` | สร้างค่าใหม่ด้วยคำสั่งในข้อ 3 |
+| `Change your temporary password first` | บัญชีใช้รหัสชั่วคราวอยู่ ให้ Login ผ่านหน้าเว็บแล้วตั้งรหัสใหม่ |
+| `This user has permissions you don't hold` | กำลังจัดการบัญชีที่มีสิทธิ์มากกว่าตัวเอง ให้ Super Admin ทำแทน |
 | Login ไม่ได้ | ยังไม่ได้ `npm run db:seed` หรือรหัสไม่ตรง `SEED_ADMIN_PASSWORD` |
 | `has no equivalent in encoding "WIN874"` | ฐานข้อมูลสร้างด้วย encoding ของ Windows ให้ปิด `db:local` ลบโฟลเดอร์ `.pgdata` แล้วเปิดใหม่ (สคริปต์ปัจจุบันบังคับ UTF-8 แล้ว) |
 | หน้าเว็บ/API ขึ้น 404 ทั้งที่มีไฟล์ | cache ของ dev เสีย ให้ปิด `npm run dev` ลบโฟลเดอร์ `.next` แล้วเปิดใหม่ |
@@ -155,7 +191,7 @@ git pull
 
 ---
 
-## 9. โครงสร้างระบบโดยย่อ
+## 10. โครงสร้างระบบโดยย่อ
 
 ```
 Browser → Next.js (หน้าเว็บ + REST API /api/v1)

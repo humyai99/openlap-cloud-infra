@@ -73,7 +73,7 @@ export const queries = {
   async users() {
     const rows = await db.user.findMany({
       where: { deletedAt: null },
-      include: { userRoles: { include: { role: true } }, teams: { include: { team: true } } },
+      include: { userRoles: { include: { role: true, project: true } }, teams: { include: { team: true } } },
       orderBy: { createdAt: "asc" },
     });
     return rows.map(toUser);

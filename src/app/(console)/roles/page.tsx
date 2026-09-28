@@ -1,16 +1,14 @@
 import type { Metadata } from "next";
-import { UsersView } from "@/components/admin/users-view";
+import { RolesView } from "@/components/admin/roles-view";
 import { EmptyState } from "@/components/common";
 import { listRoles } from "@/lib/server/admin";
 import { hasPermission, requireUser } from "@/lib/server/auth";
-import { queries } from "@/lib/server/queries";
 
-export const metadata: Metadata = { title: "Users" };
+export const metadata: Metadata = { title: "Roles" };
 export const dynamic = "force-dynamic";
 
-export default async function UsersPage() {
+export default async function RolesPage() {
   const me = await requireUser();
   if (!hasPermission(me, "user.manage")) return <EmptyState title="Access denied" description="Your role doesn't include User Management." />;
-  const [users, roles, projects] = await Promise.all([queries.users(), listRoles(), queries.projects()]);
-  return <UsersView initialUsers={users} roles={roles} projects={projects} meId={me.userId} />;
+  return <RolesView initialRoles={await listRoles()} myPermissions={[...me.global]} />;
 }

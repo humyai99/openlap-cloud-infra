@@ -2,11 +2,15 @@
  * Typed browser client for the OpenLab REST API (/api/v1).
  * UI components must go through this client — never call providers directly.
  */
-import type { ApiError, AuditLog, Instance, InstanceType, Job, PowerAction, Snapshot } from "@/lib/types";
+import type { ApiError, AuditLog, Instance, InstanceType, Job, PowerAction, QuotaRow, RoleInfo, Snapshot, User } from "@/lib/types";
 import type { CreateInstanceInput, networkSchema } from "@/lib/validation/instance";
 import type { z } from "zod";
 
 export type NetworkInput = z.input<typeof networkSchema>;
+export interface BindingInput {
+  roleId: string;
+  projectId: string | null;
+}
 export interface ApiKeyInfo {
   id: string;
   name: string;
@@ -60,6 +64,23 @@ export const api = {
   createApiKey: (name: string, expiresInDays: number | null) => post<{ id: string; prefix: string; secret: string }>("/api-keys", { name, expiresInDays, scopes: [] }),
   revokeApiKey: (id: string) => request<{ ok: true }>(`/api-keys/${encodeURIComponent(id)}`, { method: "DELETE" }),
   getJob: (id: string) => request<Job>(`/jobs/${encodeURIComponent(id)}`),
+
+  // identity administration
+  listUsers: () => request<User[]>("/users"),
+  inviteUser: (input: { name: string; email: string; bindings: BindingInput[] }) =>
+    post<{ id: string; email: string; temporaryPassword: string }>("/users", input),
+  updateUser: (id: string, input: { name?: string; status?: "ACTIVE" | "DISABLED"; bindings?: BindingInput[] }) =>
+    request<{ ok: true }>(`/users/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) }),
+  resetPassword: (id: string) => post<{ temporaryPassword: string }>(`/users/${encodeURIComponent(id)}/reset-password`),
+  listRoles: () => request<RoleInfo[]>("/roles"),
+  createRole: (input: { name: string; description?: string; permissions: string[] }) => post<{ id: string }>("/roles", input),
+  updateRole: (id: string, input: { name?: string; description?: string; permissions?: string[] }) =>
+    request<{ ok: true }>(`/roles/${encodeURIComponent(id)}`, { method: "PATCH", body: JSON.stringify(input) }),
+  deleteRole: (id: string) => request<{ ok: true }>(`/roles/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  listQuotas: () => request<{ quotas: QuotaRow[]; targets: { projects: Array<{ id: string; name: string }>; users: Array<{ id: string; name: string }>; teams: Array<{ id: string; name: string }> } }>("/quotas"),
+  setQuota: (q: Omit<QuotaRow, "id" | "label">) => request<{ id: string }>("/quotas", { method: "PUT", body: JSON.stringify(q) }),
+  deleteQuota: (id: string) => request<{ ok: true }>(`/quotas/${encodeURIComponent(id)}`, { method: "DELETE" }),
+  changePassword: (current: string, next: string) => post<{ ok: true }>("/auth/password", { current, next }),
   auditLogs: () => request<AuditLog[]>("/audit-logs"),
 };
 

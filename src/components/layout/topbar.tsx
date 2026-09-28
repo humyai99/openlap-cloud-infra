@@ -1,6 +1,6 @@
 "use client";
 import * as D from "@radix-ui/react-dialog";
-import { Bell, LogOut, Menu, Moon, Search, Sun, User } from "lucide-react";
+import { Bell, KeyRound, LogOut, Menu, Moon, Search, Sun, User } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTheme } from "next-themes";
@@ -88,7 +88,10 @@ export function Topbar({ user, nodes, alerts, isRealProvider }: { user: { name: 
             </div>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
-              <Link href="/settings"><User /> Profile & settings</Link>
+              <Link href="/account/password"><KeyRound /> Change password</Link>
+            </DropdownMenuItem>
+            <DropdownMenuItem asChild>
+              <Link href="/settings"><User /> Settings</Link>
             </DropdownMenuItem>
             <DropdownMenuItem
               onSelect={async () => {

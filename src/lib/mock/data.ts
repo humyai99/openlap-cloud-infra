@@ -175,7 +175,8 @@ export const firewallRules: FirewallRule[] = [
   { id: "fw-6", scope: "global", targetId: null, direction: "in", protocol: "udp", source: "any", destination: "any", port: "161", action: "reject", priority: 80, comment: "No SNMP" },
 ];
 
-export const users: User[] = [
+/** Seed users; role bindings are created by prisma/seed.ts. */
+export const users: Array<Omit<User, "bindings" | "mustChangePassword">> = [
   { id: "u-admin", name: "Admin", email: "admin@openlab.local", role: "Super Admin", status: "active", lastLoginAt: iso(0.2 * H), teams: ["platform"], ...ts(200 * D) },
   { id: "u-somchai", name: "Somchai P.", email: "somchai@openlab.local", role: "Infrastructure Admin", status: "active", lastLoginAt: iso(3 * H), teams: ["platform", "network"], ...ts(150 * D) },
   { id: "u-nattaya", name: "Nattaya K.", email: "nattaya@openlab.local", role: "Operator", status: "active", lastLoginAt: iso(1 * D), teams: ["noc"], ...ts(100 * D) },

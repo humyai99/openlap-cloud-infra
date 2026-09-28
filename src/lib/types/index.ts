@@ -83,6 +83,36 @@ export interface User extends Timestamps {
   status: "active" | "invited" | "disabled";
   lastLoginAt: ISODate | null;
   teams: string[];
+  bindings: RoleBinding[];
+  mustChangePassword: boolean;
+}
+
+export interface RoleBinding {
+  roleId: UUID;
+  roleName: string;
+  /** null = organization-wide */
+  projectId: UUID | null;
+  projectName: string | null;
+}
+
+export interface RoleInfo {
+  id: UUID;
+  name: string;
+  description: string | null;
+  builtIn: boolean;
+  permissions: Permission[];
+  assignments: number;
+}
+
+export interface QuotaRow {
+  id: UUID;
+  scope: "PROJECT" | "USER" | "TEAM";
+  scopeId: UUID;
+  label: string;
+  maxInstances: number;
+  maxCpuCores: number;
+  maxMemoryGb: number;
+  maxStorageGb: number;
 }
 
 export type RoleName = "Super Admin" | "Infrastructure Admin" | "Operator" | "Developer" | "Viewer";

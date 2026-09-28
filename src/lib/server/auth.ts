@@ -18,6 +18,8 @@ export interface Principal {
   email: string;
   name: string;
   via: "session" | "api_key";
+  /** Temporary password issued by an admin; everything except changing it is blocked. */
+  mustChangePassword: boolean;
   /** Permissions granted organization-wide. */
   global: Set<Permission>;
   /** Permissions granted per project id. */
@@ -65,7 +67,7 @@ async function loadPrincipal(userId: string, via: Principal["via"], scopes: stri
     const target = ur.projectId ? (byProject.get(ur.projectId) ?? byProject.set(ur.projectId, new Set()).get(ur.projectId)!) : global;
     perms.forEach((p) => target.add(p));
   }
-  return { userId: user.id, email: user.email, name: user.name, via, global, byProject, scopes: scopes ? new Set(scopes) : null };
+  return { userId: user.id, email: user.email, name: user.name, via, mustChangePassword: user.mustChangePassword, global, byProject, scopes: scopes ? new Set(scopes) : null };
 }
 
 /** Resolves the caller from the session cookie or an `Authorization: Bearer olk_…` API key. */
@@ -95,10 +97,11 @@ export async function requireUser(): Promise<Principal> {
   return p;
 }
 
-/** For API routes. */
-export async function requireApiUser(): Promise<Principal> {
+/** For API routes. `allowPendingPassword` lets the change-password endpoint through. */
+export async function requireApiUser(opts: { allowPendingPassword?: boolean } = {}): Promise<Principal> {
   const p = await getPrincipal();
   if (!p) throw new AuthError(401, "Sign in required");
+  if (p.mustChangePassword && !opts.allowPendingPassword) throw new AuthError(403, "Change your temporary password first");
   return p;
 }
 

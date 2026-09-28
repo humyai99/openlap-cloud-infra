@@ -77,3 +77,50 @@ export const networkSchema = z.object({
   vlanId: z.number().int().min(1).max(4094).nullable(),
   dns: z.array(z.string().regex(ipv4Only, "Invalid DNS server")).max(4),
 });
+
+// ───────────── Identity administration ─────────────
+
+const PERMISSION_KEYS = [
+  "vm.create", "vm.delete", "vm.start", "vm.stop", "vm.console", "container.manage",
+  "network.manage", "storage.manage", "node.manage", "user.manage", "audit.read",
+] as const;
+
+export const bindingSchema = z.object({ roleId: z.string().uuid(), projectId: z.string().uuid().nullable() });
+
+export const inviteUserSchema = z.object({
+  name: z.string().trim().min(2, "Enter a name").max(100),
+  email: z.string().trim().toLowerCase().email("Enter a valid email").max(254),
+  bindings: z.array(bindingSchema).min(1, "Assign at least one role").max(20),
+});
+
+export const updateUserSchema = z
+  .object({
+    name: z.string().trim().min(2).max(100).optional(),
+    status: z.enum(["ACTIVE", "DISABLED"]).optional(),
+    bindings: z.array(bindingSchema).min(1).max(20).optional(),
+  })
+  .refine((v) => v.name || v.status || v.bindings, "Nothing to update");
+
+export const roleSchema = z.object({
+  name: z.string().trim().min(2, "Enter a role name").max(50).regex(/^[\w .-]+$/, "Letters, numbers, spaces, . _ - only"),
+  description: z.string().trim().max(200).optional(),
+  permissions: z.array(z.enum(PERMISSION_KEYS)).max(PERMISSION_KEYS.length),
+});
+
+export const quotaSchema = z.object({
+  scope: z.enum(["PROJECT", "USER", "TEAM"]),
+  scopeId: z.string().uuid(),
+  maxInstances: z.number().int().min(0).max(100_000),
+  maxCpuCores: z.number().int().min(0).max(100_000),
+  maxMemoryGb: z.number().int().min(0).max(1_000_000),
+  maxStorageGb: z.number().int().min(0).max(10_000_000),
+});
+
+export const passwordSchema = z.object({
+  current: z.string().min(1, "Enter your current password").max(256),
+  next: z
+    .string()
+    .min(12, "Use at least 12 characters")
+    .max(256)
+    .refine((v) => /[a-z]/i.test(v) && /\d/.test(v), "Mix letters and numbers"),
+});

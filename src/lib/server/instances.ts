@@ -55,6 +55,12 @@ async function assertQuota(tx: Prisma.TransactionClient, projectId: string, owne
     { label: "Project", quota: (await tx.resourceQuota.findUnique({ where: { scope_scopeId: { scope: "PROJECT", scopeId: projectId } } })) ?? DEFAULT_QUOTA, where: { projectId } },
     { label: "User", quota: await tx.resourceQuota.findUnique({ where: { scope_scopeId: { scope: "USER", scopeId: ownerId } } }), where: { ownerId } },
   ];
+  // Team quotas cap everything owned by the team's members combined.
+  const teams = await tx.teamMember.findMany({ where: { userId: ownerId }, include: { team: { include: { members: true } } } });
+  for (const t of teams) {
+    const quota = await tx.resourceQuota.findUnique({ where: { scope_scopeId: { scope: "TEAM", scopeId: t.teamId } } });
+    if (quota) scopes.push({ label: `Team "${t.team.name}"`, quota, where: { ownerId: { in: t.team.members.map((m) => m.userId) } } });
+  }
   for (const s of scopes) {
     if (!s.quota) continue;
     const u = await usage(tx, s.where);

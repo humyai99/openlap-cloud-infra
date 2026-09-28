@@ -35,10 +35,10 @@ type Handler<P> = (ctx: Ctx, req: NextRequest, params: P) => Promise<unknown>;
  * Wraps an API handler: authenticates (session cookie or API key), builds the
  * request context and maps errors to the JSON error envelope.
  */
-export function route<P = Record<string, never>>(handler: Handler<P>, opts: { status?: number } = {}) {
+export function route<P = Record<string, never>>(handler: Handler<P>, opts: { status?: number; allowPendingPassword?: boolean } = {}) {
   return async (req: NextRequest, { params }: { params: Promise<P> }) => {
     try {
-      const principal = await requireApiUser();
+      const principal = await requireApiUser({ allowPendingPassword: opts.allowPendingPassword });
       const data = await handler({ principal, ip: clientIp(req) }, req, await params);
       return NextResponse.json({ data }, { status: opts.status ?? 200 });
     } catch (e) {

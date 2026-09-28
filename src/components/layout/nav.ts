@@ -91,7 +91,7 @@ export const NAV: NavGroup[] = [
     items: [
       { label: "Users", href: "/users", icon: Users, ready: true },
       { label: "Teams", href: "/teams", icon: UsersRound },
-      { label: "Roles", href: "/roles", icon: Shield },
+      { label: "Roles", href: "/roles", icon: Shield, ready: true },
       { label: "API Keys", href: "/api-keys", icon: KeyRound, ready: true },
     ],
   },

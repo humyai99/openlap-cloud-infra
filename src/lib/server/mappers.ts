@@ -142,7 +142,9 @@ export function toAudit(r: P.AuditLog & { user: { email: string } | null }): Aud
   };
 }
 
-export function toUser(r: P.User & { userRoles: Array<{ role: { name: string } }>; teams: Array<{ team: { name: string } }> }): User {
+export function toUser(
+  r: P.User & { userRoles: Array<{ roleId: string; projectId: string | null; role: { name: string }; project: { name: string } | null }>; teams: Array<{ team: { name: string } }> },
+): User {
   return {
     id: r.id,
     name: r.name,
@@ -151,6 +153,8 @@ export function toUser(r: P.User & { userRoles: Array<{ role: { name: string } }
     status: lc(r.status),
     lastLoginAt: r.lastLoginAt?.toISOString() ?? null,
     teams: r.teams.map((t) => t.team.name),
+    bindings: r.userRoles.map((ur) => ({ roleId: ur.roleId, roleName: ur.role.name, projectId: ur.projectId, projectName: ur.project?.name ?? null })),
+    mustChangePassword: r.mustChangePassword,
     createdAt: r.createdAt.toISOString(),
     updatedAt: r.updatedAt.toISOString(),
     createdBy: r.createdBy,

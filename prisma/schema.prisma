@@ -19,6 +19,8 @@ model User {
   name         String
   passwordHash String    @map("password_hash") // Argon2id — never plaintext
   status       UserStatus @default(ACTIVE)
+  /// Set when an admin issues a temporary password; the user must pick a new one before using the console.
+  mustChangePassword Boolean @default(false) @map("must_change_password")
   lastLoginAt  DateTime? @map("last_login_at")
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
